@@ -42,14 +42,12 @@ defmodule DepotS3.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:depot, "~> 0.4.0", github: "elixir-depot/depot"},
+      {:depot, "~> 0.5.0"},
       {:ex_aws, "~> 2.1"},
       {:ex_aws_s3, "~> 2.0"},
       {:hackney, "~> 1.9"},
       {:sweet_xml, "~> 0.6"},
-      {:minio_server, "~> 0.1.0", only: :test},
-      {:jason, "~> 1.0", only: :test},
-      {:ex_doc, "~> 0.21", only: :dev, runtime: false}
+      {:minio_server, github: "mindreframer/minio_server"}
     ]
   end
 end
