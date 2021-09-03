@@ -33,5 +33,5 @@ jobs:
           elixir-version: 1.10.3
       - run: mix deps.get
       - run: mix minio_server.download --arch linux-amd64
-      - run: chmod +x _build/test/lib/minio_server/priv/minio/linux-amd64/minio
+      # - run: chmod +x _build/test/lib/minio_server/priv/minio/linux-amd64/minio
       - run: mix test
