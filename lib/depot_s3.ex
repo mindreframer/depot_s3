@@ -35,6 +35,7 @@ defmodule DepotS3 do
       S3FileSystem.write("test.txt", "Hello World")
       {:ok, "Hello World"} = S3FileSystem.read("test.txt")
   """
+  alias DepotS3.Utils
 
   defmodule Config do
     @moduledoc false
@@ -296,24 +297,32 @@ defmodule DepotS3 do
   @impl Depot.Adapter
   def clear(%Config{} = config, _opts \\ []) do
     stream =
-      ExAws.S3.list_objects(config.bucket, prefix: "")
+      ExAws.S3.list_objects(config.bucket, prefix: config.prefix)
       |> ExAws.stream!(config.config)
       |> Stream.map(& &1.key)
 
-    ExAws.S3.delete_all_objects(config.bucket, stream) |> ExAws.request!(config.config)
-    :ok
+    operation = ExAws.S3.delete_all_objects(config.bucket, stream)
+
+    case ExAws.request(operation, config.config) do
+      {:ok, _} -> :ok
+      {:error, {:http_error, 404, _}} -> {:error, :enoent}
+      rest -> rest
+    end
   end
 
   @impl Depot.Adapter
   def create_directory(%Config{} = config, path, _opts \\ []) do
     path = Depot.RelativePath.join_prefix(config.prefix, path)
     # fake folder: https://github.com/ex-aws/ex_aws/issues/231
-    ExAws.S3.put_object(config.bucket, DepotS3.Utils.ensure_folder(path), "")
-    |> ExAws.request!(config.config)
+    operation = ExAws.S3.put_object(config.bucket, DepotS3.Utils.ensure_folder(path), "")
 
-    :ok
+    case ExAws.request(operation, config.config) do
+      {:ok, _} -> :ok
+      {:error, {:http_error, 404, _}} -> {:error, :enoent}
+      rest -> rest
+    end
   end
-  alias DepotS3.Utils
+
   @impl Depot.Adapter
   def delete_directory(%Config{} = config, path, opts \\ []) do
     path = Depot.RelativePath.join_prefix(config.prefix, path) |> Utils.ensure_folder()
@@ -324,28 +333,26 @@ defmodule DepotS3 do
       |> ExAws.stream!(config.config)
       |> Stream.map(& &1.key)
       |> Enum.to_list()
-      # |> IO.inspect(label: "OBJECTS IN FOLDER")
 
-    ## filter fake directory entries...
+    operation = ExAws.S3.delete_object(config.bucket, Utils.ensure_folder(path))
+
+    delFn = fn ->
+      case ExAws.request(operation, config.config) do
+        {:ok, _} -> :ok
+        {:error, {:http_error, 404, _}} -> {:error, :enoent}
+        rest -> rest
+      end
+    end
 
     cond do
       length(objects) == 0 ->
-        ExAws.S3.delete_object(config.bucket, path)
-        |> ExAws.request!(config.config)
-
-        :ok
+        delFn.()
 
       length(objects) == 1 && Enum.at(objects, 0) == Utils.strip_prefix_slash(path) ->
-        ExAws.S3.delete_object(config.bucket, Utils.ensure_folder(path))
-        |> ExAws.request!(config.config)
-
-        :ok
+        delFn.()
 
       recursive ->
-        ExAws.S3.delete_object(config.bucket, path)
-        |> ExAws.request!(config.config)
-
-        :ok
+        delFn.()
 
       true ->
         {:error, "Can't delete non-empty folders"}
