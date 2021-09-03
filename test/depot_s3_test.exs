@@ -1,6 +1,6 @@
 defmodule DepotS3Test do
   use ExUnit.Case
-  import Depot.AdapterTest
+  import DepotS3.AdapterTest
 
   setup do
     config = DepotS3.Minio.config()

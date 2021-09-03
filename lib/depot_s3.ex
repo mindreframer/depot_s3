@@ -291,4 +291,64 @@ defmodule DepotS3 do
     |> Enum.sort_by(&elem(&1, 0))
     |> Enum.map(&elem(&1, 1))
   end
+
+  ### stubs to silence warnings
+  @impl Depot.Adapter
+  def clear(%Config{} = config, _opts \\ []) do
+    stream =
+      ExAws.S3.list_objects(config.bucket, prefix: "")
+      |> ExAws.stream!(config.config)
+      |> Stream.map(& &1.key)
+
+    ExAws.S3.delete_all_objects(config.bucket, stream) |> ExAws.request!(config.config)
+    :ok
+  end
+
+  @impl Depot.Adapter
+  def create_directory(%Config{} = config, path, _opts \\ []) do
+    path = Depot.RelativePath.join_prefix(config.prefix, path)
+    # fake folder: https://github.com/ex-aws/ex_aws/issues/231
+    ExAws.S3.put_object(config.bucket, DepotS3.Utils.ensure_folder(path), "")
+    |> ExAws.request!(config.config)
+
+    :ok
+  end
+  alias DepotS3.Utils
+  @impl Depot.Adapter
+  def delete_directory(%Config{} = config, path, opts \\ []) do
+    path = Depot.RelativePath.join_prefix(config.prefix, path) |> Utils.ensure_folder()
+    recursive = Keyword.get(opts, :recursive)
+
+    objects =
+      ExAws.S3.list_objects(config.bucket, prefix: path)
+      |> ExAws.stream!(config.config)
+      |> Stream.map(& &1.key)
+      |> Enum.to_list()
+      # |> IO.inspect(label: "OBJECTS IN FOLDER")
+
+    ## filter fake directory entries...
+
+    cond do
+      length(objects) == 0 ->
+        ExAws.S3.delete_object(config.bucket, path)
+        |> ExAws.request!(config.config)
+
+        :ok
+
+      length(objects) == 1 && Enum.at(objects, 0) == Utils.strip_prefix_slash(path) ->
+        ExAws.S3.delete_object(config.bucket, Utils.ensure_folder(path))
+        |> ExAws.request!(config.config)
+
+        :ok
+
+      recursive ->
+        ExAws.S3.delete_object(config.bucket, path)
+        |> ExAws.request!(config.config)
+
+        :ok
+
+      true ->
+        {:error, "Can't delete non-empty folders"}
+    end
+  end
 end
